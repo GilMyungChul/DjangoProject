@@ -1,0 +1,83 @@
+{% load static %}
+<!DOCTYPE html>
+<html>
+<head>
+    <title>서울 자전거 예측 지도</title>
+    <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
+    <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+    <style>
+        #map { height: 800px; width: 100%; }
+        .leaflet-default-icon-path {
+            background-image: url('https://unpkg.com/leaflet@1.9.4/dist/images/marker-icon.png');
+        }
+    </style>
+    <link rel="stylesheet" href="{% static 'css/base.css' %}">
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/leaflet.markercluster/1.4.1/MarkerCluster.css" />
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/leaflet.markercluster/1.4.1/MarkerCluster.Default.css" />
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/leaflet.markercluster/1.4.1/leaflet.markercluster.js"></script>
+    {{ predict_data | json_script:"predict_data" }}
+</head>
+<body>
+    {% include "header.html" %}
+    <div class="container mx-auto p-4">
+        <h2>서울 공공자전거 예측 현황</h2>
+        <div id="map"></div>
+    </div>
+    
+    <script>
+    var predict_data_raw = document.getElementById('predict_data').textContent;
+    var predict_data = JSON.parse(predict_data_raw);
+
+    var map = L.map('map').setView([37.5665, 126.9780], 12);
+    
+    L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
+        attribution: '&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors'
+    }).addTo(map);
+
+    var smallIcon = new L.Icon({
+        iconUrl: 'https://unpkg.com/leaflet@1.9.4/dist/images/marker-icon.png',
+        iconRetinaUrl: 'https://unpkg.com/leaflet@1.9.4/dist/images/marker-icon-2x.png',
+        shadowUrl: 'https://unpkg.com/leaflet@1.9.4/dist/images/marker-shadow.png',
+        iconSize: [18, 29],
+        iconAnchor: [9, 29],
+        popupAnchor: [1, -24],
+        shadowSize: [29, 29]
+    });
+    
+    var markers = L.markerClusterGroup();
+
+    if (predict_data && predict_data.length > 0) {
+        predict_data.forEach(function(station) {
+            // API에서 가져온 위도와 경도를 사용합니다.
+            var latitude = parseFloat(station.stationLatitude);
+            var longitude = parseFloat(station.stationLongitude);
+            
+            // CSV 파일에서 합쳐진 한글 컬럼명을 사용합니다.
+            var stationName = station.stationName;
+            var predictedChange = station['순변화량'];
+            var predictedReturns = station['반납건수'];
+            var predictedRentals = station['대여건수'];
+            
+            if (!isNaN(latitude) && !isNaN(longitude)) {
+                var popupContent = `
+                    <b>${stationName}</b><br>
+                    예측 순변화량: ${predictedChange}<br>
+                    예측 반납 수량: ${predictedReturns}<br>
+                    예측 대여 수량: ${predictedRentals}
+                `;
+
+                var marker = L.marker([latitude, longitude], {icon: smallIcon})
+                    .bindPopup(popupContent);
+                markers.addLayer(marker);
+            } else {
+                console.warn("위도/경도 정보가 유효하지 않아 마커를 추가할 수 없습니다:", station);
+            }
+        });
+        
+        map.addLayer(markers);
+    } else {
+        console.error("예측 데이터를 불러올 수 없습니다. CSV 파일 경로 또는 데이터에 문제가 있을 수 있습니다.");
+    }
+    </script>
+</body>
+</html>

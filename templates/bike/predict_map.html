@@ -1,0 +1,133 @@
+{% load static %}
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+    <meta charset="utf-8" />
+    <title>예측 지도</title>
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/tailwindcss/2.2.19/tailwind.min.css" />
+    <style>
+        #map {
+            width: 100%;
+            height: 90vh;
+        }
+        .info-window {
+            padding: 5px;
+            font-size: 12px;
+            color: black;
+        }
+    </style>
+    <link rel="stylesheet" href="{% static 'css/base.css' %}">
+    <!-- ✅ https + autoload=false 적용 -->
+    <script src="https://dapi.kakao.com/v2/maps/sdk.js?appkey=6dfcc20b286108276495368994204e6d&libraries=services,clusterer&autoload=false"></script>
+</head>
+<body>
+    {% include "header.html" %}
+    <div class="container mx-auto p-4">
+        <h1 class="text-2xl font-bold mb-4">예측 지도</h1>
+        <div id="map" style="width: 100%; height: 80vh;"></div>
+
+        <!-- Django에서 데이터 전달 -->
+        {{ predict_data|json_script:"predict_data_json" }}
+        {{ initial_lat_lng|json_script:"initial_lat_lng_json" }}
+    </div>
+
+<script>
+    const predictDataElement = document.getElementById('predict_data_json');
+    const initialLatLngElement = document.getElementById('initial_lat_lng_json');
+    
+    if (!predictDataElement || !initialLatLngElement) {
+        console.error("데이터를 찾을 수 없습니다.");
+    } else {
+        const predict_data = JSON.parse(predictDataElement.textContent);
+        const initial_lat_lng = JSON.parse(initialLatLngElement.textContent);
+
+        console.log("받은 예측 데이터:", predict_data);
+        console.log("첫 번째 데이터 구조:", predict_data[0]);
+
+        // ✅ autoload=false 일 때 kakao.maps.load 안에서 실행
+        kakao.maps.load(() => {
+            let mapContainer = document.getElementById('map');
+            let mapOption = {
+                center: new kakao.maps.LatLng(37.5665, 126.9780), // 기본: 서울시청
+                level: 6
+            };
+
+            if (initial_lat_lng.length === 2 && initial_lat_lng[0] !== null && initial_lat_lng[1] !== null) {
+                mapOption.center = new kakao.maps.LatLng(initial_lat_lng[0], initial_lat_lng[1]);
+                mapOption.level = 3;
+            }
+
+            let map = new kakao.maps.Map(mapContainer, mapOption);
+            
+            let clusterer = new kakao.maps.MarkerClusterer({
+                map: map,
+                averageCenter: true,
+                minLevel: 10,
+            });
+
+            let markers = [];
+            let clickedMarker = null;
+
+            predict_data.forEach(data => {
+                const lat = parseFloat(data.stationLatitude);
+                const lng = parseFloat(data.stationLongitude);
+
+                if (!isNaN(lat) && !isNaN(lng)) {
+                    let statusColor = '#333';
+                    let statusText = '적절';
+                    
+                    if (data['순변화량'] > 0) {
+                        statusColor = '#f65a5a';
+                        statusText = '과잉';
+                    } else if (data['순변화량'] < 0) {
+                        statusColor = '#828afd';
+                        statusText = '부족';
+                    }
+
+                    const infoWindowContent = `
+                    <div class="info-window" style="
+                    width: 180px; 
+                    word-break: break-word; 
+                    white-space: normal; 
+                    font-size: 13px; 
+                    line-height: 1.4;
+                    ">
+                        <b>${data.stationName}</b><br>
+                        예측 대여건수: ${data['대여건수']} <br>
+                        예측 반납건수: ${data['반납건수']} <br>
+                        순변화량: ${data['순변화량']} <br>
+                        상태: <span style="color: ${statusColor};">${statusText}</span>
+                    </div>
+                    `;
+
+                    const marker = new kakao.maps.Marker({
+                        position: new kakao.maps.LatLng(lat, lng),
+                        map: map
+                    });
+
+                    const infoWindow = new kakao.maps.InfoWindow({
+                        content: infoWindowContent,
+                        removable: true
+                    });
+
+                    kakao.maps.event.addListener(marker, 'click', function() {
+                        if (clickedMarker && clickedMarker !== marker) {
+                            clickedMarker.infoWindow?.close(); // ✅ 안전하게 닫기
+                        }
+                        infoWindow.open(map, marker);
+                        clickedMarker = marker;
+                        clickedMarker.infoWindow = infoWindow;
+                    });
+                    
+                    if (initial_lat_lng.length === 2 && lat === initial_lat_lng[0] && lng === initial_lat_lng[1]) {
+                        infoWindow.open(map, marker);
+                    }
+                    markers.push(marker);
+                }
+            });
+            clusterer.addMarkers(markers);
+        });
+    }
+</script>
+</body>
+</html>
